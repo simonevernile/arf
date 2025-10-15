@@ -6,3 +6,4 @@
 | MySQL                      | 8.4          |
 | MariaDB                    | 10.11        |
 | Apache HTTP Server (httpd) | 2.4.63       |
+| NodeJS                     | 22.13        |
