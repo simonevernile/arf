@@ -13,20 +13,31 @@ Il Load Balancer deve essere gestito secondo la seguente regola:
 
 ### 🔹 Componente PaaS richiesta
 
-**Servizio:** Google Cloud HTTP(S) Load Balancing
-**Tipologia:** *External Managed Load Balancer*
+**Servizio:** Google Cloud Load Balancing (gestito)
+**Tipologie supportate:**
 
-| Caratteristica           | Valore richiesto                                                                 |
-| :----------------------- | :------------------------------------------------------------------------------- |
-| **Backend**              | Le VM o i Managed Instance Group appartenenti allo stesso cluster                |
-| **Health Check**         | HTTP su path `/healthz`, timeout ≤ 5 s, max 3 tentativi                          |
-| **SSL**                  | Certificato gestito GCP (auto-renew)                                             |
-| **Frontend IP**          | Statico (pubblico o privato, in base all’ambiente)                               |
-| **Logging e Monitoring** | Obbligatori – integrati con Cloud Logging e Monitoring                           |
-| **Autoscaling policy**   | Abilitata – target CPU ≤ 60%, max 5 istanze                                      |
-| **Firewall**             | Devono essere consentite le porte 80 e 443 dal load balancer                     |
-| **Cluster management**   | Un Load Balancer per cluster; se `Cluster` non specificato → uno per tutte le VM |
-| **Billing model**        | Pay-as-you-go – costo per GB di traffico e per forwarding rule attiva            |
+* **FE (Front-End):** *External Managed HTTP(S) Load Balancer* (globale) – **IP Pubblico**
+* **AL (App Layer):** *Internal Managed HTTP(S) Load Balancer* (regionale) – **IP Privato**
+* **DB (Data/Backend TCP):** *Internal TCP Load Balancer* (regionale) – **IP Privato**
+
+| Caratteristica         | FE (External HTTPS)                                       | AL (Internal HTTPS)                                                               | DB (Internal TCP)                                                     |
+| :--------------------- | :-------------------------------------------------------- | :-------------------------------------------------------------------------------- | :-------------------------------------------------------------------- |
+| **Scopo**              | Pubblicazione servizi web verso Internet                  | Bilanciamento intra-VPC per servizi applicativi HTTP(S)                           | Bilanciamento TCP per servizi DB (es. 5432/3306/1521)                 |
+| **Frontend IP**        | **Statico pubblico** (Global)                             | **Statico privato** (Regional, subnet interna/proxy-only)                         | **Statico privato** (Regional, subnet interna)                        |
+| **Certificati**        | **Managed SSL** (auto-renew)                              | Certificati tramite **Certificate Manager** (managed o self-managed, DNS privato) | N/D (livello TCP)                                                     |
+| **Backend**            | MIG/IG delle VM del cluster                               | MIG/IG delle VM del cluster                                                       | MIG/IG delle VM DB                                                    |
+| **Health Check**       | HTTP su `/healthz`, timeout ≤ 5s, 3 tentativi             | HTTP su `/healthz`, timeout ≤ 5s, 3 tentativi                                     | TCP sulla porta del DB (es. `var.db_port`), timeout ≤ 5s, 3 tentativi |
+| **Autoscaling**        | MIG con target CPU ≤ 60%, max 5                           | MIG con target CPU ≤ 60%, max 5                                                   | **Facoltativo** (tipicamente fisso per DB)                            |
+| **Firewall**           | Allow 80/443 *da LB*; allow ranges **health-checker** GCP | Allow 80/443 dal VPC; allow ranges **health-checker** GCP                         | Allow `db_port` dal VPC; allow ranges **health-checker** GCP          |
+| **Logging/Monitoring** | Abilitati (Cloud Logging/Monitoring)                      | Abilitati                                                                         | Abilitati                                                             |
+| **Scope**              | **Globale** (Application LB esterno)                      | **Regionale** (Application LB interno, richiede **proxy-only subnet**)            | **Regionale** (TCP LB interno)                                        |
+| **Regola cluster**     | 1 LB per `Cluster` o 1 LB shared per ambiente/progetto    | 1 LB per `Cluster` o 1 LB shared per ambiente/progetto                            | 1 LB per `Cluster` o 1 LB shared per ambiente/progetto                |
+
+> **Note operative GCP**
+>
+> * **FE:** External Managed HTTPS LB richiede risorse globali (URL map, target HTTPS proxy, global forwarding rule).
+> * **AL:** Internal Managed HTTPS LB richiede **proxy-only subnet** nella regione e un **internal managed certificate** o self-managed in **Certificate Manager** + DNS privato.
+> * **DB:** Internal TCP LB usa **regional forwarding rule**, **backend service TCP**, **health check TCP**.
 
 ---
 
@@ -34,16 +45,28 @@ Il Load Balancer deve essere gestito secondo la seguente regola:
 
 * Garantire *High Availability* e *Fault Tolerance* senza configurazioni manuali.
 * Centralizzare il traffico e semplificare la gestione di certificati e health check.
-* Evitare proliferazione di Load Balancer non necessari, ottimizzando costi e manutenzione.
+* Evitare proliferazione di LB non necessari, ottimizzando costi e manutenzione.
 * Uniformare la configurazione delle architetture su GCP secondo lo standard enterprise.
 
 ---
 
 ### 🔹 Output atteso
 
-| Risorsa                   | Tipo                    | Note                                             |
-| :------------------------ | :---------------------- | :----------------------------------------------- |
-| `lb-<cluster>-<ambiente>` | HTTP(S) Load Balancer   | creato per cluster, se specificato               |
-| `lb-shared-<ambiente>`    | HTTP(S) Load Balancer   | unico per tutte le VM se nessun cluster indicato |
-| `hc-<servizio>`           | Health Check            | per bilanciamento automatico                     |
-| `cert-<servizio>`         | Managed SSL Certificate | per HTTPS                                        |
+| Risorsa                     | Tipo                            | Note                                                                  |
+| :-------------------------- | :------------------------------ | :-------------------------------------------------------------------- |
+| `lb-<tipo>-<cluster>-<env>` | Load Balancer (FE/AL/DB)        | dedicato per cluster; se `Cluster` assente → `lb-<tipo>-shared-<env>` |
+| `hc-<tipo>-<servizio>`      | Health Check                    | HTTP (`/healthz`) per FE/AL, TCP per DB                               |
+| `cert-<servizio>`           | Managed/Self SSL (FE/AL)        | Gestito tramite Certificate Manager                                   |
+| `ip-<tipo>-<env>`           | Indirizzo IP (pubblico/privato) | Statico: pubblico solo per **FE**, privato per **AL/DB**              |
+| `fw-allow-<tipo>-...`       | Regole Firewall                 | Ingress dal LB e dagli health-checker GCP                             |
+
+---
+
+## 💡 **Regole di conformità (riassunto)**
+
+* **FE:** External HTTPS LB con **IP pubblico** statico globale, cert **managed**, URL Map/Proxy/FR globali.
+* **AL:** Internal HTTPS LB con **IP privato** regionale, **proxy-only subnet** obbligatoria, cert in **Certificate Manager**, DNS privato.
+* **DB:** Internal TCP LB con **IP privato** regionale, health check **TCP** sulla porta DB, niente TLS a livello LB.
+* **Cluster management:** naming `lb-<tipo>-<cluster>-<env>` oppure `lb-<tipo>-shared-<env>`.
+* **Logging/Monitoring:** abilitati su backend service.
+* **Firewall:** consentire **health-checker** GCP e porte servizio; 80/443 per FE/AL, `db_port` per DB.
