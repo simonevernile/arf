@@ -1,11 +1,3 @@
----
-
-profile: "spec_lb_gcp"
-format: "machine_readable"
-compat: "gemini_cli>=1.0"
-version: "1.2.0"
-----------------
-
 ## 🧱 **Building Block – Requisito Architetturale per VM su GCP**
 
 > **Nota per agent/Gemini CLI**: La specifica è strutturata in blocchi **deterministici** con chiavi stabili (k:v). Evitare inferenze: se un campo non è specificato, considerarlo **obbligatorio** quando marcato `required: true` nella sezione *Schema*.
