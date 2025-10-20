@@ -76,90 +76,65 @@ Il Load Balancer deve essere gestito secondo la seguente regola:
 * **Logging/Monitoring:** abilitati su backend service.
 * **Firewall:** consentire **health‑checker** GCP e porte servizio; 80/443 per FE/AL, `db_port` per DB.
 
-## ⚙️ Parametri minimi consigliati
+---
 
-> Valori base per garantire conformità e funzionamento out‑of‑the‑box. Adattali in base a carico/ambiente.
+## 🧩 **Configurazione minima “no‑error” per Terraform (per tipo di LB)**
 
-### FE — External Managed HTTP(S) LB (pubblico)
+> Mappa prescrittiva dei componenti e dei vincoli per evitare errori di deploy. Niente snippet: solo requisiti.
 
-* **Scope**: globale (Application LB esterno)
-* **IP**: statico **pubblico**
-* **Certificati**: Managed SSL (auto‑renew), TLS ≥ 1.2
-* **Backend service**:
+### 1) **FE – External Managed HTTP(S) LB (pubblico)**
 
-  * `load_balancing_scheme = EXTERNAL_MANAGED`
-  * `protocol = HTTP` *(o `HTTPS`/`HTTP2`)*
-  * `port_name = "https"` *(consigliato in prod)*
-  * `session_affinity = NONE`
-  * **Logging**: abilitato, `sample_rate = 1.0`
-* **Backend (MIG/IG)**:
+**Scope & componenti (GLOBAL):**
 
-  * `balancing_mode = UTILIZATION`
-  * `max_utilization = 0.6`
-  * `capacity_scaler = 1.0`
-  * **Named port MIG**: `https:443` *(oppure `http:80` se necessario)*
-* **Health check (HTTP/S)**:
+* **Forwarding Rule (GLOBAL)**: schema `EXTERNAL_MANAGED`, IP **pubblico** statico, `port = 443`.
+* **Target HTTPS Proxy (GLOBAL)**: collega **URL Map** e **certificati** (Certificate Manager, managed).
+* **URL Map (GLOBAL)**: default service = **Backend Service (GLOBAL)**.
+* **Backend Service (GLOBAL)**: `load_balancing_scheme = EXTERNAL_MANAGED`, `protocol = HTTP` (o `HTTPS/HTTP2`), `port_name = "https"`, **logging on**.
+* **Backend (MIG/IG/NEG)**: `balancing_mode = UTILIZATION`, `max_utilization = 0.6`, `capacity_scaler = 1.0`.
+* **Named port sul MIG**: `https:443` (coerente con `port_name`).
+* **Health Check (HTTP/S, GLOBAL)**: path `/healthz`, `timeout ≤ 5s`, `check_interval ≤ 5s`, `healthy_threshold = 2`, `unhealthy_threshold = 3`, `port_specification = USE_SERVING_PORT`.
+* **Firewall**: allow `80,443` e i range health‑checker `130.211.0.0/22`, `35.191.0.0/16` verso i backend.
 
-  * Path: `/healthz`
-  * `timeout ≤ 5s`, `check_interval ≤ 5s`
-  * `healthy_threshold = 2`, `unhealthy_threshold = 3`
-  * `port_specification = USE_SERVING_PORT`
-* **Firewall**:
+**Errori prevenuti:** mismatch **global vs regional**, assenza named port, HC su porta errata, capacità = 0.
 
-  * Allow `80,443` dal LB e dai range health‑checker GCP `130.211.0.0/22`, `35.191.0.0/16`
+---
 
-### AL — Internal Managed HTTP(S) LB (privato)
+### 2) **AL – Internal Managed HTTP(S) LB (privato)**
 
-* **Scope**: **regionale** (tutti i componenti nella **stessa region**)
-* **IP**: statico **privato** (subnet interna)
-* **Proxy‑only subnet**: dedicata (purpose **REGIONAL_MANAGED_PROXY**)
-* **Certificati**: Certificate Manager (managed/self‑managed), DNS privato
-* **Backend service (regionale)**:
+**Scope & componenti (REGIONAL, stessa `region`):**
 
-  * `load_balancing_scheme = INTERNAL_MANAGED`
-  * `protocol = HTTP` *(o `HTTPS`/`HTTP2`/`H2C`)*
-  * `port_name = "https"`
-  * `session_affinity = NONE`
-  * **Logging**: abilitato, `sample_rate = 1.0`
-* **Backend (MIG/IG)**:
+* **Forwarding Rule (REGIONAL)**: `load_balancing_scheme = INTERNAL_MANAGED`, IP **privato** statico (subnet interna), `port = 443`, **network** e **subnetwork = proxy‑only subnet**.
+* **Target HTTPS Proxy (REGIONAL)**: punta a **Region URL Map** e a **Certificate Manager** (managed/self‑managed).
+* **URL Map (REGIONAL)**: default service = **Region Backend Service**.
+* **Region Backend Service**: `load_balancing_scheme = INTERNAL_MANAGED`, `protocol = HTTP` (o `HTTPS/HTTP2/H2C`), `port_name = "https"`, **logging on**.
+* **Backend (MIG/IG/NEG)**: per MIG/IG usare `balancing_mode = UTILIZATION`, `max_utilization = 0.6`, `capacity_scaler = 1.0`. Per NEG è possibile `RATE` con `max_rate_per_endpoint` > 0.
+* **Named port sul MIG**: `https:443` (coerente con `port_name`).
+* **Health Check (HTTP/S, REGIONAL)**: path `/healthz`, `timeout ≤ 5s`, `check_interval ≤ 5s`, `healthy_threshold = 2`, `unhealthy_threshold = 3`, `port_specification = USE_SERVING_PORT` **oppure** `port = 443`.
+* **Proxy‑only subnet**: presente nella stessa region e referenziata nella forwarding rule.
+* **Firewall**: allow `80,443` dal VPC e dai range health‑checker `130.211.0.0/22`, `35.191.0.0/16`.
 
-  * `balancing_mode = UTILIZATION`
-  * `max_utilization = 0.6`
-  * `capacity_scaler = 1.0`
-  * **Named port MIG**: `https:443`
-* **Health check (HTTP/S)**:
+**Errori prevenuti:** mix **global/regional**, **proxy‑only subnet** mancante, named port/port_name non allineati, capacità = 0.
 
-  * Path: `/healthz`
-  * `timeout ≤ 5s`, `check_interval ≤ 5s`
-  * `healthy_threshold = 2`, `unhealthy_threshold = 3`
-  * `port_specification = USE_SERVING_PORT`
-* **Firewall**:
+---
 
-  * Allow `80,443` dal VPC e dai range health‑checker GCP `130.211.0.0/22`, `35.191.0.0/16`
+### 3) **DB – Internal TCP LB (privato, L4 passthrough)**
 
-### DB — Internal TCP LB (privato, L4 passthrough)
+**Scope & componenti (REGIONAL, stessa `region`):**
 
-* **Scope**: **regionale**
-* **IP**: statico **privato** (subnet DB)
-* **Backend service (regionale)**:
+* **Forwarding Rule (REGIONAL)**: `load_balancing_scheme = INTERNAL`, IP **privato** statico, `port = <db_port>`, network/subnetwork DB.
+* **Region Backend Service (TCP)**: `load_balancing_scheme = INTERNAL`, `protocol = TCP`, `session_affinity = CLIENT_IP` (facoltativa), **logging on**.
+* **Backend (MIG/IG/NEG)**: `balancing_mode = CONNECTION` **con capacità esplicita**: **uno** tra `max_connections_per_instance` (es. **2000**) **oppure** `max_connections` (es. **10000**); `capacity_scaler = 1.0`.
+* **Health Check (TCP, REGIONAL)**: `port = <db_port>`, `timeout ≤ 5s`, `check_interval ≤ 5s`, `healthy_threshold = 2`, `unhealthy_threshold = 3`.
+* **Firewall**: allow `<db_port>` dal VPC e dai range health‑checker `130.211.0.0/22`, `35.191.0.0/16`.
 
-  * `load_balancing_scheme = INTERNAL`
-  * `protocol = TCP`
-  * `session_affinity = CLIENT_IP` *(facoltativa)*
-  * **Logging**: abilitato, `sample_rate = 1.0`
-* **Backend (MIG/IG/NEG)**:
+**Errori prevenuti:** omissione capacità con `CONNECTION`, protocol/HC incoerenti, mix scope, capacità = 0.
 
-  * `balancing_mode = CONNECTION`
-  * **Capacità** *(obbligatoria)*: impostare **uno** tra:
+---
 
-    * `max_connections_per_instance = 2000` *(valore iniziale consigliato)*, **oppure**
-    * `max_connections = 10000` *(se vuoi una soglia totale)*
-  * `capacity_scaler = 1.0`
-* **Health check (TCP)**:
+### ✅ Promemoria generali anti‑errore
 
-  * Porta: `db_port` (es. `5432`)
-  * `timeout ≤ 5s`, `check_interval ≤ 5s`
-  * `healthy_threshold = 2`, `unhealthy_threshold = 3`
-* **Firewall**:
-
-  * Allow `db_port` dal VPC e dai range health‑checker GCP `130.211.0.0/22`, `35.191.0.0/16`
+* **Co‑localizza lo scope**: per `INTERNAL_MANAGED` **tutto REGIONAL**; per `EXTERNAL_MANAGED` **tutto GLOBAL**.
+* **Allinea `port_name` ⇄ named port**.
+* **HC**: usa `USE_SERVING_PORT` o imposta la stessa porta di servizio.
+* **Capacity**: con `UTILIZATION` usa `max_utilization`; con `CONNECTION` imposta `max_connections*`; non mescolare parametri di modalità diverse.
+* **Firewall**: apri le porte richieste e i range degli health‑checker GCP.
