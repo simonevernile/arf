@@ -1,4 +1,14 @@
+---
+
+profile: spec_lb_gcp
+format: machine_readable
+compat: gemini_cli>=1.0
+version: 1.2.0
+--------------
+
 ## 🧱 **Building Block – Requisito Architetturale per VM su GCP**
+
+> **Nota per agent/Gemini CLI**: La specifica è strutturata in blocchi **deterministici** con chiavi stabili (k:v). Evitare inferenze: se un campo non è specificato, considerarlo **obbligatorio** quando marcato `required: true` nella sezione *Schema*.
 
 ### 🔹 Descrizione
 
@@ -20,23 +30,28 @@ Il Load Balancer deve essere gestito secondo la seguente regola:
 * **AL (App Layer):** *Internal Managed HTTP(S) Load Balancer* (regionale) – **IP Privato**
 * **DB (Data/Backend TCP):** *Internal TCP Load Balancer* (regionale, L4 passthrough) – **IP Privato**
 
-| Caratteristica             | FE (External HTTPS)                                         | AL (Internal HTTPS)                                                                               | DB (Internal TCP)                                                                                                                                                          |
-| :------------------------- | :---------------------------------------------------------- | :------------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Scopo**                  | Pubblicazione servizi web verso Internet                    | Bilanciamento intra‑VPC per servizi applicativi HTTP(S)                                           | Bilanciamento TCP per servizi DB (es. 5432/3306/1521)                                                                                                                      |
-| **Frontend IP**            | **Statico pubblico** (Global)                               | **Statico privato** (Regional, subnet interna/proxy‑only)                                         | **Statico privato** (Regional, subnet interna)                                                                                                                             |
-| **Certificati**            | **Managed SSL** (auto‑renew)                                | Certificati tramite **Certificate Manager** (managed o self‑managed, DNS privato)                 | N/D (livello TCP)                                                                                                                                                          |
-| **Backend**                | MIG/IG delle VM del cluster                                 | MIG/IG delle VM del cluster                                                                       | MIG/IG delle VM DB                                                                                                                                                         |
-| **Health Check**           | HTTP su `/healthz`, timeout ≤ 5s, 3 tentativi               | HTTP su `/healthz`, timeout ≤ 5s, 3 tentativi                                                     | TCP sulla porta del DB (es. 5432), timeout ≤ 5s, 3 tentativi                                                                                                               |
-| **Autoscaling**            | MIG con target CPU ≤ 60%, max 5                             | MIG con target CPU ≤ 60%, max 5                                                                   | **Facoltativo** (tipicamente fisso per DB)                                                                                                                                 |
-| **Firewall**               | Allow 80/443 *da LB*; allow ranges **health‑checker** GCP   | Allow 80/443 dal VPC; allow ranges **health‑checker** GCP                                         | Allow `db_port` dal VPC; allow ranges **health‑checker** GCP                                                                                                               |
-| **Logging/Monitoring**     | Abilitati (Cloud Logging/Monitoring)                        | Abilitati                                                                                         | Abilitati                                                                                                                                                                  |
-| **Scope**                  | **Globale** (Application LB esterno)                        | **Regionale** (tutti i componenti **devono** essere regionali: URL Map, Target HTTPS Proxy, FR)   | **Regionale** (TCP LB interno)                                                                                                                                             |
-| **Regola cluster**         | 1 LB per `Cluster` o 1 LB shared per ambiente/progetto      | 1 LB per `Cluster` o 1 LB shared per ambiente/progetto                                            | 1 LB per `Cluster` o 1 LB shared per ambiente/progetto                                                                                                                     |
-| **load_balancing_scheme**  | `EXTERNAL_MANAGED`                                          | `INTERNAL_MANAGED`                                                                                | `INTERNAL`                                                                                                                                                                 |
-| **protocol**               | `HTTP` *(oppure HTTPS/HTTP2 se richiesto)*                  | `HTTP` *(oppure HTTPS/HTTP2/H2C)*                                                                 | `TCP`                                                                                                                                                                      |
-| **backend.balancing_mode** | `UTILIZATION`                                               | `UTILIZATION`                                                                                     | `CONNECTION`                                                                                                                                                               |
-| **Target capacity**        | Se `UTILIZATION`: `max_utilization` in [0.0,1.0] (es. 0.6)  | Se `UTILIZATION`: `max_utilization` in [0.0,1.0] (es. 0.6)                                        | **Obbligatorio** con `CONNECTION`: impostare `max_connections` *oppure* `max_connections_per_instance` (o `per_endpoint`). Impostare anche `capacity_scaler > 0` se usato. |
-| **Note tecniche**          | Named port del MIG coerente con `port_name` (es. `http:80`) | Tutti gli oggetti **regionali**; proxy‑only subnet richiesta; named port coerente con `port_name` | Passthrough L4; non usare `max_utilization`/`max_rate*` con `CONNECTION`                                                                                                   |
+| Caratteristica             | FE (External HTTPS)                                         | AL (Internal HTTPS)                                                                               | DB (Internal TCP)                                                                                                                                                          |                                                        |                                                        |                                                        |
+| :------------------------- | :---------------------------------------------------------- | :------------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------ |
+| **Scopo**                  | Pubblicazione servizi web verso Internet                    | Bilanciamento intra‑VPC per servizi applicativi HTTP(S)                                           | Bilanciamento TCP per servizi DB (es. 5432/3306/1521)                                                                                                                      |                                                        |                                                        |                                                        |
+| **Frontend IP**            | **Statico pubblico** (Global)                               | **Statico privato** (Regional, subnet interna/proxy‑only)                                         | **Statico privato** (Regional, subnet interna)                                                                                                                             |                                                        |                                                        |                                                        |
+| **Certificati**            | **Managed SSL** (auto‑renew)                                | Certificati tramite **Certificate Manager** (managed o self‑managed, DNS privato)                 | N/D (livello TCP)                                                                                                                                                          |                                                        |                                                        |                                                        |
+| **Backend**                | MIG/IG delle VM del cluster                                 | MIG/IG delle VM del cluster                                                                       | MIG/IG/NEG delle VM DB                                                                                                                                                     |                                                        |                                                        |                                                        |
+| **Health Check**           | HTTP su `/healthz`, timeout ≤ 5s, 3 tentativi               | HTTP su `/healthz`, timeout ≤ 5s, 3 tentativi                                                     | TCP sulla porta del DB (es. 5432), timeout ≤ 5s, 3 tentativi                                                                                                               |                                                        |                                                        |                                                        |
+| **Autoscaling**            | MIG con target CPU ≤ 60%, max 5                             | MIG con target CPU ≤ 60%, max 5                                                                   | **Facoltativo** (tipicamente fisso per DB)                                                                                                                                 |                                                        |                                                        |                                                        |
+| **Firewall**               | Allow 80/443 *da LB*; allow ranges **health‑checker** GCP   | Allow 80/443 dal VPC; allow ranges **health‑checker** GCP                                         | Allow `db_port` dal VPC; allow ranges **health‑checker** GCP                                                                                                               |                                                        |                                                        |                                                        |
+| **Logging/Monitoring**     | Abilitati (Cloud Logging/Monitoring)                        | Abilitati                                                                                         | Abilitati                                                                                                                                                                  |                                                        |                                                        |                                                        |
+| **Scope**                  | **Globale** (Application LB esterno)                        | **Regionale** (Application LB interno, richiede **proxy‑only subnet**)                            | **Regionale** (TCP LB interno)                                                                                                                                             |                                                        |                                                        |                                                        |
+| **Regola cluster**         | 1 LB per `Cluster` o 1 LB shared per ambiente/progetto      | 1 LB per `Cluster` o 1 LB shared per ambiente/progetto                                            | 1 LB per `Cluster` o 1 LB shared per ambiente/progetto                                                                                                                     |                                                        |                                                        |                                                        |
+| **load_balancing_scheme**  | `EXTERNAL_MANAGED`                                          | `INTERNAL_MANAGED`                                                                                | **`INTERNAL_SELF_MANAGED`** *(per Backend Service regionale TCP)*                                                                                                          |                                                        |                                                        |                                                        |
+| **protocol**               | `HTTP` *(oppure HTTPS/HTTP2 se richiesto)*                  | `HTTP` *(oppure HTTPS/HTTP2/H2C)*                                                                 | `TCP`                                                                                                                                                                      |                                                        |                                                        |                                                        |
+| **backend.balancing_mode** | `UTILIZATION`                                               | `UTILIZATION`                                                                                     | `CONNECTION`                                                                                                                                                               |                                                        |                                                        |                                                        |
+| **Target capacity**        | Se `UTILIZATION`: `max_utilization` in [0.0,1.0] (es. 0.6)  | Se `UTILIZATION`: `max_utilization` in [0.0,1.0] (es. 0.6)                                        | **Obbligatorio** con `CONNECTION`: **uno** tra `max_connections_per_instance` o `max_connections` (o per endpoint); `capacity_scaler > 0`.                                 |                                                        |                                                        |                                                        |
+| **Note tecniche**          | Named port del MIG coerente con `port_name` (es. `http:80`) | Tutti gli oggetti **regionali**; proxy‑only subnet richiesta; named port coerente con `port_name` | Passthrough L4; **nessuna risorsa separata `google_compute_backend_service_backend`**: i `backend {}` sono **annidati** nel Backend Service                                | 1 LB per `Cluster` o 1 LB shared per ambiente/progetto | 1 LB per `Cluster` o 1 LB shared per ambiente/progetto | 1 LB per `Cluster` o 1 LB shared per ambiente/progetto |
+| **load_balancing_scheme**  | `EXTERNAL_MANAGED`                                          | `INTERNAL_MANAGED`                                                                                | `INTERNAL`                                                                                                                                                                 |                                                        |                                                        |                                                        |
+| **protocol**               | `HTTP` *(oppure HTTPS/HTTP2 se richiesto)*                  | `HTTP` *(oppure HTTPS/HTTP2/H2C)*                                                                 | `TCP`                                                                                                                                                                      |                                                        |                                                        |                                                        |
+| **backend.balancing_mode** | `UTILIZATION`                                               | `UTILIZATION`                                                                                     | `CONNECTION`                                                                                                                                                               |                                                        |                                                        |                                                        |
+| **Target capacity**        | Se `UTILIZATION`: `max_utilization` in [0.0,1.0] (es. 0.6)  | Se `UTILIZATION`: `max_utilization` in [0.0,1.0] (es. 0.6)                                        | **Obbligatorio** con `CONNECTION`: impostare `max_connections` *oppure* `max_connections_per_instance` (o `per_endpoint`). Impostare anche `capacity_scaler > 0` se usato. |                                                        |                                                        |                                                        |
+| **Note tecniche**          | Named port del MIG coerente con `port_name` (es. `http:80`) | Tutti gli oggetti **regionali**; proxy‑only subnet richiesta; named port coerente con `port_name` | Passthrough L4; non usare `max_utilization`/`max_rate*` con `CONNECTION`                                                                                                   |                                                        |                                                        |                                                        |
 
 > **Note operative GCP**
 >
@@ -104,16 +119,18 @@ Il Load Balancer deve essere gestito secondo la seguente regola:
 **Scope & componenti (REGIONAL, stessa `region`):**
 
 * **Forwarding Rule (REGIONAL)**: `load_balancing_scheme = INTERNAL_MANAGED`, IP **privato** statico (subnet interna), `port = 443`, **network** e **subnetwork = proxy‑only subnet**.
-* **Target HTTPS Proxy (REGIONAL)**: punta a **Region URL Map** e a **Certificate Manager** (managed/self‑managed).
-* **URL Map (REGIONAL)**: default service = **Region Backend Service**.
-* **Region Backend Service**: `load_balancing_scheme = INTERNAL_MANAGED`, `protocol = HTTP` (o `HTTPS/HTTP2/H2C`), `port_name = "https"`, **logging on**.
-* **Backend (MIG/IG/NEG)**: per MIG/IG usare `balancing_mode = UTILIZATION`, `max_utilization = 0.6`, `capacity_scaler = 1.0`. Per NEG è possibile `RATE` con `max_rate_per_endpoint` > 0.
+* **Target HTTPS Proxy (REGIONAL)**: **`google_compute_region_target_https_proxy`** nella stessa `region` della forwarding rule; certificati da **Certificate Manager** (campo `certificate_manager_certificates`).
+* **URL Map (REGIONAL)**: **`google_compute_region_url_map`**; default service = **Region Backend Service**.
+* **Region Backend Service**: **`google_compute_region_backend_service`**, `load_balancing_scheme = INTERNAL_MANAGED`, `protocol = HTTP` (o `HTTPS/HTTP2/H2C`), `port_name = "https"`, **logging on**.
+
+  * **Backend (MIG/IG)**: **`balancing_mode = UTILIZATION`** *(obbligatorio dichiararlo esplicitamente)*, `max_utilization = 0.6`, `capacity_scaler = 1.0`.
+  * **Backend (NEG)**: ammesso `balancing_mode = RATE` con **`max_rate_per_endpoint` > 0** (o `max_rate`).
 * **Named port sul MIG**: `https:443` (coerente con `port_name`).
-* **Health Check (HTTP/S, REGIONAL)**: path `/healthz`, `timeout ≤ 5s`, `check_interval ≤ 5s`, `healthy_threshold = 2`, `unhealthy_threshold = 3`, `port_specification = USE_SERVING_PORT` **oppure** `port = 443`.
-* **Proxy‑only subnet**: presente nella stessa region e referenziata nella forwarding rule.
+* **Health Check (HTTP/S, REGIONAL)**: **`google_compute_region_health_check`**; path `/healthz`, `timeout ≤ 5s`, `check_interval ≤ 5s`, `healthy_threshold = 2`, `unhealthy_threshold = 3`, `port_specification = USE_SERVING_PORT` **oppure** `port = 443`.
+* **Proxy‑only subnet**: presente nella stessa region e referenziata nella forwarding rule; purpose **REGIONAL_MANAGED_PROXY**.
 * **Firewall**: allow `80,443` dal VPC e dai range health‑checker `130.211.0.0/22`, `35.191.0.0/16`.
 
-**Errori prevenuti:** mix **global/regional**, **proxy‑only subnet** mancante, named port/port_name non allineati, capacità = 0.
+**⚠️ Nota importantissima (capacità):** per AL **HTTP(S)** su MIG/IG **non usare** `balancing_mode = CONNECTION` (non valido per Application LB). Usare **`UTILIZATION`** (o `RATE` con NEG) + parametri coerenti, altrimenti si ottiene *“None of the backends have a valid capacity”*.
 
 ---
 
@@ -122,7 +139,7 @@ Il Load Balancer deve essere gestito secondo la seguente regola:
 **Scope & componenti (REGIONAL, stessa `region`):**
 
 * **Forwarding Rule (REGIONAL)**: `load_balancing_scheme = INTERNAL`, IP **privato** statico, `port = <db_port>`, network/subnetwork DB.
-* **Region Backend Service (TCP)**: `load_balancing_scheme = INTERNAL`, `protocol = TCP`, `session_affinity = CLIENT_IP` (facoltativa), **logging on**.
+* **Region Backend Service (TCP)**: `load_balancing_scheme = INTERNAL_SELF_MANAGED`, `protocol = TCP`, `session_affinity = CLIENT_IP` (facoltativa), **logging on**.
 * **Backend (MIG/IG/NEG)**: `balancing_mode = CONNECTION` **con capacità esplicita**: **uno** tra `max_connections_per_instance` (es. **2000**) **oppure** `max_connections` (es. **10000**); `capacity_scaler = 1.0`.
 * **Health Check (TCP, REGIONAL)**: `port = <db_port>`, `timeout ≤ 5s`, `check_interval ≤ 5s`, `healthy_threshold = 2`, `unhealthy_threshold = 3`.
 * **Firewall**: allow `<db_port>` dal VPC e dai range health‑checker `130.211.0.0/22`, `35.191.0.0/16`.
@@ -138,3 +155,183 @@ Il Load Balancer deve essere gestito secondo la seguente regola:
 * **HC**: usa `USE_SERVING_PORT` o imposta la stessa porta di servizio.
 * **Capacity**: con `UTILIZATION` usa `max_utilization`; con `CONNECTION` imposta `max_connections*`; non mescolare parametri di modalità diverse.
 * **Firewall**: apri le porte richieste e i range degli health‑checker GCP.
+
+---
+
+## 🤖 Sezione machine‑readable per Gemini CLI
+
+> Struttura deterministica in formato YAML‑like (niente snippet Terraform). Chiavi e valori pensati per parsing rigido.
+
+### 📐 Schema (campi standard per tutti i LB)
+
+```yaml
+schema:
+  - name: scope
+    type: enum
+    values: [GLOBAL, REGIONAL]
+    required: true
+  - name: ip_type
+    type: enum
+    values: [PUBLIC_STATIC, PRIVATE_STATIC]
+    required: true
+  - name: forwarding_rule
+    type: object
+    required: true
+    keys:
+      load_balancing_scheme: {type: enum, values: [EXTERNAL_MANAGED, INTERNAL_MANAGED, INTERNAL], required: true}
+      port: {type: int|list<int>, required: true}
+      network: {type: self_link, required: false}
+      subnetwork: {type: self_link, required: false}
+  - name: target_proxy
+    type: object
+    required: conditional(INTERNAL_MANAGED||EXTERNAL_MANAGED)
+    keys:
+      type: {type: enum, values: [GLOBAL_TARGET_HTTPS_PROXY, REGION_TARGET_HTTPS_PROXY], required: true}
+      certificates: {type: list, required: conditional(HTTPS)}
+  - name: url_map
+    type: object
+    required: conditional(INTERNAL_MANAGED||EXTERNAL_MANAGED)
+  - name: backend_service
+    type: object
+    required: true
+    keys:
+      load_balancing_scheme: {type: enum, values: [EXTERNAL_MANAGED, INTERNAL_MANAGED, INTERNAL_SELF_MANAGED], required: true}
+      protocol: {type: enum, values: [HTTP, HTTPS, HTTP2, H2C, TCP], required: true}
+      port_name: {type: string, required: conditional(HTTP*)}
+      logging: {type: boolean, required: true}
+  - name: backend_block
+    type: object
+    required: true
+    keys:
+      group: {type: self_link, required: true}
+      balancing_mode: {type: enum, values: [UTILIZATION, RATE, CONNECTION], required: true}
+      capacity:
+        type: object
+        required: true
+        keys:
+          max_utilization: {type: float[0..1], required: conditional(UTILIZATION)}
+          max_rate|max_rate_per_endpoint: {type: int, required: conditional(RATE)}
+          max_connections|max_connections_per_instance|max_connections_per_endpoint: {type: int, required: conditional(CONNECTION)}
+          capacity_scaler: {type: float>0, required: false}
+  - name: health_check
+    type: object
+    required: true
+    keys:
+      type: {type: enum, values: [HTTP, HTTPS, TCP], required: true}
+      path: {type: string, required: conditional(HTTP|HTTPS)}
+      port|port_specification: {type: variant, required: true}
+      thresholds: {type: object, required: true}
+  - name: firewall
+    type: object
+    required: true
+```
+
+### 1) FE – External Managed HTTP(S) LB (pubblico)
+
+```yaml
+lb: FE
+scope: GLOBAL
+ip_type: PUBLIC_STATIC
+forwarding_rule:
+  load_balancing_scheme: EXTERNAL_MANAGED
+  port: 443
+  network: null
+  subnetwork: null
+target_proxy:
+  type: GLOBAL_TARGET_HTTPS_PROXY
+  certificates: CertificateManager(managed)
+url_map: GLOBAL_URL_MAP (default_service → FE.backend_service)
+backend_service:
+  load_balancing_scheme: EXTERNAL_MANAGED
+  protocol: HTTP  # ammessi: HTTPS, HTTP2
+  port_name: https
+  logging: true
+backend_block:
+  group: MIG/IG/NEG(self_link)
+  balancing_mode: UTILIZATION
+  capacity:
+    max_utilization: 0.6
+    capacity_scaler: 1.0
+health_check:
+  type: HTTPS  # o HTTP
+  path: /healthz
+  port_specification: USE_SERVING_PORT
+  thresholds: {timeout_s: 5, interval_s: 5, healthy: 2, unhealthy: 3}
+firewall:
+  allow_ports: [80,443]
+  allow_sources: [130.211.0.0/22, 35.191.0.0/16]
+notes:
+  - NamedPort(MIG): https:443 ↔ port_name=https
+```
+
+### 2) AL – Internal Managed HTTP(S) LB (privato)
+
+```yaml
+lb: AL
+scope: REGIONAL (tutti i componenti nella stessa region)
+ip_type: PRIVATE_STATIC
+forwarding_rule:
+  load_balancing_scheme: INTERNAL_MANAGED
+  port: 443
+  network: <vpc_self_link>
+  subnetwork: <proxy_only_subnet_self_link>
+target_proxy:
+  type: REGION_TARGET_HTTPS_PROXY
+  certificates: CertificateManager(managed|self)
+url_map: REGION_URL_MAP (default_service → AL.region_backend_service)
+backend_service:
+  load_balancing_scheme: INTERNAL_MANAGED
+  protocol: HTTP  # ammessi: HTTPS, HTTP2, H2C
+  port_name: https
+  logging: true
+backend_block:
+  group: MIG/IG/NEG(self_link)
+  balancing_mode: UTILIZATION  # per MIG/IG
+  capacity:
+    max_utilization: 0.6
+    capacity_scaler: 1.0
+health_check:
+  type: HTTPS  # o HTTP
+  path: /healthz
+  port_specification: USE_SERVING_PORT  # oppure port: 443
+  thresholds: {timeout_s: 5, interval_s: 5, healthy: 2, unhealthy: 3}
+firewall:
+  allow_ports: [80,443]
+  allow_sources: [130.211.0.0/22, 35.191.0.0/16]
+notes:
+  - ProxyOnlySubnet(purpose=REGIONAL_MANAGED_PROXY)
+  - NamedPort(MIG): https:443 ↔ port_name=https
+  - AntiPattern: FR(REGIONAL) → TargetProxy(GLOBAL) ❌
+```
+
+### 3) DB – Internal TCP LB (privato, L4)
+
+```yaml
+lb: DB
+scope: REGIONAL (tutti i componenti nella stessa region)
+ip_type: PRIVATE_STATIC
+forwarding_rule:
+  load_balancing_scheme: INTERNAL
+  port: <db_port>
+  network: <vpc_self_link>
+  subnetwork: <db_subnet_self_link>
+backend_service:
+  load_balancing_scheme: INTERNAL_SELF_MANAGED
+  protocol: TCP
+  logging: true
+backend_block:
+  group: MIG/IG/NEG(self_link)
+  balancing_mode: CONNECTION
+  capacity:
+    max_connections_per_instance: 2000  # oppure max_connections: 10000
+    capacity_scaler: 1.0
+health_check:
+  type: TCP
+  port: <db_port>
+  thresholds: {timeout_s: 5, interval_s: 5, healthy: 2, unhealthy: 3}
+firewall:
+  allow_ports: [<db_port>]
+  allow_sources: [130.211.0.0/22, 35.191.0.0/16]
+notes:
+  - Non usare parametri RATE/UTILIZATION con CONNECTION
+```
