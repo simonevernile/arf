@@ -1,10 +1,10 @@
 ---
 
-profile: spec_lb_gcp
-format: machine_readable
-compat: gemini_cli>=1.0
-version: 1.2.0
---------------
+profile: "spec_lb_gcp"
+format: "machine_readable"
+compat: "gemini_cli>=1.0"
+version: "1.2.0"
+----------------
 
 ## 🧱 **Building Block – Requisito Architetturale per VM su GCP**
 
@@ -160,68 +160,132 @@ Il Load Balancer deve essere gestito secondo la seguente regola:
 
 ## 🤖 Sezione machine‑readable per Gemini CLI
 
-> Struttura deterministica in formato YAML‑like (niente snippet Terraform). Chiavi e valori pensati per parsing rigido.
+> Struttura deterministica in **YAML valido** (senza caratteri speciali nei nomi chiave). Niente snippet Terraform.
 
 ### 📐 Schema (campi standard per tutti i LB)
 
 ```yaml
 schema:
-  - name: scope
+  scope:
     type: enum
     values: [GLOBAL, REGIONAL]
     required: true
-  - name: ip_type
+  ip_type:
     type: enum
     values: [PUBLIC_STATIC, PRIVATE_STATIC]
     required: true
-  - name: forwarding_rule
+  forwarding_rule:
     type: object
     required: true
     keys:
-      load_balancing_scheme: {type: enum, values: [EXTERNAL_MANAGED, INTERNAL_MANAGED, INTERNAL], required: true}
-      port: {type: int|list<int>, required: true}
-      network: {type: self_link, required: false}
-      subnetwork: {type: self_link, required: false}
-  - name: target_proxy
+      load_balancing_scheme:
+        type: enum
+        values: [EXTERNAL_MANAGED, INTERNAL_MANAGED, INTERNAL]
+        required: true
+      port:
+        type: integer_or_integer_list
+        required: true
+      network:
+        type: self_link
+        required: false
+      subnetwork:
+        type: self_link
+        required: false
+  target_proxy:
     type: object
-    required: conditional(INTERNAL_MANAGED||EXTERNAL_MANAGED)
+    required_if: [INTERNAL_MANAGED, EXTERNAL_MANAGED]
     keys:
-      type: {type: enum, values: [GLOBAL_TARGET_HTTPS_PROXY, REGION_TARGET_HTTPS_PROXY], required: true}
-      certificates: {type: list, required: conditional(HTTPS)}
-  - name: url_map
+      type:
+        type: enum
+        values: [GLOBAL_TARGET_HTTPS_PROXY, REGION_TARGET_HTTPS_PROXY]
+        required: true
+      certificates:
+        type: list
+        required_if_protocol: [HTTPS]
+  url_map:
     type: object
-    required: conditional(INTERNAL_MANAGED||EXTERNAL_MANAGED)
-  - name: backend_service
+    required_if: [INTERNAL_MANAGED, EXTERNAL_MANAGED]
+  backend_service:
     type: object
     required: true
     keys:
-      load_balancing_scheme: {type: enum, values: [EXTERNAL_MANAGED, INTERNAL_MANAGED, INTERNAL_SELF_MANAGED], required: true}
-      protocol: {type: enum, values: [HTTP, HTTPS, HTTP2, H2C, TCP], required: true}
-      port_name: {type: string, required: conditional(HTTP*)}
-      logging: {type: boolean, required: true}
-  - name: backend_block
+      load_balancing_scheme:
+        type: enum
+        values: [EXTERNAL_MANAGED, INTERNAL_MANAGED, INTERNAL_SELF_MANAGED]
+        required: true
+      protocol:
+        type: enum
+        values: [HTTP, HTTPS, HTTP2, H2C, TCP]
+        required: true
+      port_name:
+        type: string
+        required_if_protocol_family: [HTTP]
+      logging:
+        type: boolean
+        required: true
+  backend_block:
     type: object
     required: true
     keys:
-      group: {type: self_link, required: true}
-      balancing_mode: {type: enum, values: [UTILIZATION, RATE, CONNECTION], required: true}
+      group:
+        type: self_link
+        required: true
+      balancing_mode:
+        type: enum
+        values: [UTILIZATION, RATE, CONNECTION]
+        required: true
       capacity:
         type: object
         required: true
         keys:
-          max_utilization: {type: float[0..1], required: conditional(UTILIZATION)}
-          max_rate|max_rate_per_endpoint: {type: int, required: conditional(RATE)}
-          max_connections|max_connections_per_instance|max_connections_per_endpoint: {type: int, required: conditional(CONNECTION)}
-          capacity_scaler: {type: float>0, required: false}
-  - name: health_check
+          max_utilization:
+            type: float_0_1
+            required_if_balancing_mode: [UTILIZATION]
+          max_rate:
+            type: integer
+            required_if_balancing_mode: [RATE]
+          max_rate_per_endpoint:
+            type: integer
+            required_if_balancing_mode: []
+          max_connections:
+            type: integer
+            required_if_balancing_mode: [CONNECTION]
+          max_connections_per_instance:
+            type: integer
+            required_if_balancing_mode: []
+          max_connections_per_endpoint:
+            type: integer
+            required_if_balancing_mode: []
+          capacity_scaler:
+            type: float_gt_0
+            required: false
+  health_check:
     type: object
     required: true
     keys:
-      type: {type: enum, values: [HTTP, HTTPS, TCP], required: true}
-      path: {type: string, required: conditional(HTTP|HTTPS)}
-      port|port_specification: {type: variant, required: true}
-      thresholds: {type: object, required: true}
-  - name: firewall
+      type:
+        type: enum
+        values: [HTTP, HTTPS, TCP]
+        required: true
+      path:
+        type: string
+        required_if: [HTTP, HTTPS]
+      port:
+        type: integer
+        required: false
+      port_specification:
+        type: enum
+        values: [USE_SERVING_PORT]
+        required: false
+      thresholds:
+        type: object
+        required: true
+        keys:
+          timeout_s: {type: integer}
+          interval_s: {type: integer}
+          healthy: {type: integer}
+          unhealthy: {type: integer}
+  firewall:
     type: object
     required: true
 ```
@@ -239,99 +303,99 @@ forwarding_rule:
   subnetwork: null
 target_proxy:
   type: GLOBAL_TARGET_HTTPS_PROXY
-  certificates: CertificateManager(managed)
-url_map: GLOBAL_URL_MAP (default_service → FE.backend_service)
+  certificates: [certificate_manager_managed]
+url_map: GLOBAL_URL_MAP
 backend_service:
   load_balancing_scheme: EXTERNAL_MANAGED
-  protocol: HTTP  # ammessi: HTTPS, HTTP2
+  protocol: HTTP
   port_name: https
   logging: true
 backend_block:
-  group: MIG/IG/NEG(self_link)
+  group: MIG_OR_IG_OR_NEG_SELF_LINK
   balancing_mode: UTILIZATION
   capacity:
     max_utilization: 0.6
     capacity_scaler: 1.0
 health_check:
-  type: HTTPS  # o HTTP
+  type: HTTPS
   path: /healthz
   port_specification: USE_SERVING_PORT
   thresholds: {timeout_s: 5, interval_s: 5, healthy: 2, unhealthy: 3}
 firewall:
-  allow_ports: [80,443]
+  allow_ports: [80, 443]
   allow_sources: [130.211.0.0/22, 35.191.0.0/16]
 notes:
-  - NamedPort(MIG): https:443 ↔ port_name=https
+  - named_port_mig: "https:443" must match port_name "https"
 ```
 
 ### 2) AL – Internal Managed HTTP(S) LB (privato)
 
 ```yaml
 lb: AL
-scope: REGIONAL (tutti i componenti nella stessa region)
+scope: REGIONAL
 ip_type: PRIVATE_STATIC
 forwarding_rule:
   load_balancing_scheme: INTERNAL_MANAGED
   port: 443
-  network: <vpc_self_link>
-  subnetwork: <proxy_only_subnet_self_link>
+  network: VPC_SELF_LINK
+  subnetwork: PROXY_ONLY_SUBNET_SELF_LINK
 target_proxy:
   type: REGION_TARGET_HTTPS_PROXY
-  certificates: CertificateManager(managed|self)
-url_map: REGION_URL_MAP (default_service → AL.region_backend_service)
+  certificates: [certificate_manager_managed, certificate_manager_self]
+url_map: REGION_URL_MAP
 backend_service:
   load_balancing_scheme: INTERNAL_MANAGED
-  protocol: HTTP  # ammessi: HTTPS, HTTP2, H2C
+  protocol: HTTP
   port_name: https
   logging: true
 backend_block:
-  group: MIG/IG/NEG(self_link)
-  balancing_mode: UTILIZATION  # per MIG/IG
+  group: MIG_OR_IG_OR_NEG_SELF_LINK
+  balancing_mode: UTILIZATION
   capacity:
     max_utilization: 0.6
     capacity_scaler: 1.0
 health_check:
-  type: HTTPS  # o HTTP
+  type: HTTPS
   path: /healthz
-  port_specification: USE_SERVING_PORT  # oppure port: 443
+  port_specification: USE_SERVING_PORT
   thresholds: {timeout_s: 5, interval_s: 5, healthy: 2, unhealthy: 3}
 firewall:
-  allow_ports: [80,443]
+  allow_ports: [80, 443]
   allow_sources: [130.211.0.0/22, 35.191.0.0/16]
 notes:
-  - ProxyOnlySubnet(purpose=REGIONAL_MANAGED_PROXY)
-  - NamedPort(MIG): https:443 ↔ port_name=https
-  - AntiPattern: FR(REGIONAL) → TargetProxy(GLOBAL) ❌
+  - proxy_only_subnet_purpose: REGIONAL_MANAGED_PROXY
+  - named_port_mig: "https:443" must match port_name "https"
+  - anti_pattern: regional_forwarding_rule_to_global_target_proxy
 ```
 
 ### 3) DB – Internal TCP LB (privato, L4)
 
 ```yaml
 lb: DB
-scope: REGIONAL (tutti i componenti nella stessa region)
+scope: REGIONAL
 ip_type: PRIVATE_STATIC
 forwarding_rule:
   load_balancing_scheme: INTERNAL
-  port: <db_port>
-  network: <vpc_self_link>
-  subnetwork: <db_subnet_self_link>
+  port: DB_PORT
+  network: VPC_SELF_LINK
+  subnetwork: DB_SUBNET_SELF_LINK
 backend_service:
   load_balancing_scheme: INTERNAL_SELF_MANAGED
   protocol: TCP
   logging: true
 backend_block:
-  group: MIG/IG/NEG(self_link)
+  group: MIG_OR_IG_OR_NEG_SELF_LINK
   balancing_mode: CONNECTION
   capacity:
-    max_connections_per_instance: 2000  # oppure max_connections: 10000
+    max_connections_per_instance: 2000
     capacity_scaler: 1.0
 health_check:
   type: TCP
-  port: <db_port>
+  port: DB_PORT
   thresholds: {timeout_s: 5, interval_s: 5, healthy: 2, unhealthy: 3}
 firewall:
-  allow_ports: [<db_port>]
+  allow_ports: [DB_PORT]
   allow_sources: [130.211.0.0/22, 35.191.0.0/16]
 notes:
-  - Non usare parametri RATE/UTILIZATION con CONNECTION
+  - do_not_use_rate_or_utilization_with_connection
 ```
