@@ -199,10 +199,3 @@ validations:
 ```
 
 ---
-
-## 📘 Conclusioni
-
-> Con questa configurazione:
-> - Tutti i **Load Balancer** vengono creati correttamente al **primo `terraform apply`**.  
-> - Nessun errore di **scope mismatch** o **capacità non valida**.  
-> - Allineamento completo con **GCP API**, **Terraform Provider** e **Gemini CLI**.
