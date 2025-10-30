@@ -10,3 +10,5 @@
 | Rocky Linux                     | 10           |
 | Red Hat Enterprise Linux (RHEL) | 9            |
 | CentOS                          | 9            |
+| Oracle Database                 | 19.19        |
+| Oracle WebLogic Server          | 14.1.2.0     |
