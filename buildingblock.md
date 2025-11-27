@@ -2,7 +2,7 @@
 
 ## 🔹 Descrizione
 
-Se è presente un cluster di **VM Compute Engine** su **GCP** (indicato nella SA nella colonna Cluster e Nome Cluster, o nelle Note) all'interno della SA, è obbligatoria l’associazione di una **componente di Load Balancer (L4)** per garantire *alta disponibilità*, *scalabilità* e *fault tolerance*.
+Se è presente un cluster di **VM Compute Engine** su **GCP** (indicato nella SA nella colonna Cluster e Nome Cluster, o nelle Note e deve avere due o più VM nello stesso layer con lo stesso software) all'interno della SA, è obbligatoria l’associazione di una **componente di Load Balancer (L4)** per garantire *alta disponibilità*, *scalabilità* e *fault tolerance*.
 
 Questa versione del building block definisce i tre casi architetturali standard basati su **TCP/UDP Load Balancer**, senza livelli HTTP(S):
 
